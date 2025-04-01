@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Transcription</title>
+</head>
+<body>
+    <h1>Live Transcription</h1>
+    <button onclick="startRecording()">Start Recording</button>
+    <div id="transcription"></div>
+    <script>
+        let socket;
+        let stream;
+        let mediaRecorder;
+        let recordingInterval;
+
+        async function startRecording() {
+            console.log("Start recording clicked");
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("WebRTC is not supported in your browser");
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                console.log("Got user media stream");
+
+                socket = new WebSocket("ws://localhost:8000/ws");
+
+                socket.onmessage = event => {
+                    console.log("Received data from websocket");
+                    appendTranscription(event.data);
+                };
+
+                socket.onopen = () => {
+                    console.log("WebSocket connection opened");
+                    startNewMediaRecorder();
+                    recordingInterval = setInterval(startNewMediaRecorder, 1000);
+                };
+
+                socket.onclose = () => {
+                    console.log("WebSocket connection closed");
+                    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                        mediaRecorder.stop();
+                    }
+                    clearInterval(recordingInterval);
+                };
+
+                socket.onerror = (error) => {
+                    console.error("WebSocket error:", error);
+                };
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+                alert(`Error accessing media devices: ${error.message}`);
+            }
+        }
+
+        function startNewMediaRecorder() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    console.log("Sending data to websocket");
+                    socket.send(event.data);
+                }
+            };
+
+            mediaRecorder.start();
+        }
+
+        function appendTranscription(text) {
+            const transcriptionElement = document.getElementById("transcription");
+            transcriptionElement.innerText += text + "\n";
+        }
+    </script>
+</body>
+</html>
